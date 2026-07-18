@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Image Enhancer — demo</title>
+    <style>
+      :root {
+        --bg: #1a1f24;
+        --fg: #e8eef2;
+        --accent: #3d9b8f;
+        --muted: #8a9aa4;
+        --panel: #12161a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(ellipse at 20% 0%, #243038, var(--bg));
+        color: var(--fg);
+        padding: 2rem;
+      }
+      h1 { font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.5rem; }
+      p.lead { color: var(--muted); margin: 0 0 1.5rem; max-width: 40rem; line-height: 1.45; }
+      .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.85rem; }
+      button, label.file {
+        background: var(--accent);
+        color: #041210;
+        border: 0;
+        padding: 0.65rem 1.1rem;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.secondary { background: #3a4550; color: var(--fg); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      label.file input { display: none; }
+      fieldset.mode {
+        border: 1px solid #2c353c;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin: 0 0 1rem;
+        max-width: 420px;
+      }
+      fieldset.mode legend { color: var(--muted); padding: 0 0.35rem; }
+      fieldset.mode label { display: block; margin: 0.35rem 0; cursor: pointer; }
+      #status { font-variant-numeric: tabular-nums; color: var(--muted); }
+      .bar {
+        height: 6px;
+        background: #2c353c;
+        border-radius: 3px;
+        overflow: hidden;
+        max-width: 420px;
+        margin: 0.75rem 0 1.5rem;
+      }
+      .bar > i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition: width 0.15s ease;
+      }
+      .previews {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+      figure {
+        margin: 0;
+        background: var(--panel);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      figure img { display: block; width: 100%; height: auto; min-height: 80px; background: #0d1013; }
+      figcaption { padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--muted); }
+      code { font-size: 0.8rem; }
+      #modelHint { font-size: 0.85rem; color: var(--muted); max-width: 40rem; margin: 0 0 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Image Enhancer</h1>
+    <p class="lead">
+      По умолчанию работает <strong>эвристика</strong>. Обученная TinyCNN подключается только после
+      <code>export_web_weights.py</code> и выбора режима «Модель».
+    </p>
+
+    <fieldset class="mode">
+      <legend>Предиктор параметров</legend>
+      <label><input type="radio" name="predictor" value="heuristic" checked /> Эвристика (без ML)</label>
+      <label><input type="radio" name="predictor" value="model" /> Модель TinyCNN (JSON-веса)</label>
+    </fieldset>
+    <p id="modelHint">Проверка модели…</p>
+
+    <div class="row">
+      <label class="file">Выбрать изображение<input id="file" type="file" accept="image/*,.heic,.heif,.bmp" /></label>
+      <button id="degrade" class="secondary" disabled>Синтетически испортить</button>
+      <button id="run" disabled>Улучшить</button>
+      <button id="cancel" disabled>Отмена</button>
+    </div>
+    <div id="status">Ожидание файла…</div>
+    <div class="bar"><i id="prog"></i></div>
+
+    <div class="previews">
+      <figure>
+        <img id="before" alt="Вход" />
+        <figcaption>Вход (исходник или после порчи)</figcaption>
+      </figure>
+      <figure>
+        <img id="after" alt="Результат" />
+        <figcaption>Результат <code id="params"></code></figcaption>
+      </figure>
+    </div>
+
+    <script type="module">
+      import { ImageEnhancer, degradeBlob, randomDegradeFactors } from './dist/index.js';
+
+      const MODEL_URL = new URL('./models/enhance_params.json', import.meta.url).href;
+
+      const enhancer = new ImageEnhancer({
+        workerUrl: new URL('./dist/worker.js', import.meta.url),
+        heicDecoderUrl: new URL('./dist/vendor/heic2any.js', import.meta.url),
+      });
+
+      const fileInput = document.getElementById('file');
+      const runBtn = document.getElementById('run');
+      const cancelBtn = document.getElementById('cancel');
+      const degradeBtn = document.getElementById('degrade');
+      const statusEl = document.getElementById('status');
+      const prog = document.getElementById('prog');
+      const before = document.getElementById('before');
+      const after = document.getElementById('after');
+      const paramsEl = document.getElementById('params');
+      const modelHint = document.getElementById('modelHint');
+
+      let currentBlob = null;
+      let currentTask = null;
+      let beforeUrl = null;
+
+      async function checkModel() {
+        try {
+          const res = await fetch(MODEL_URL, { method: 'GET', cache: 'no-store' });
+          if (res.ok) {
+            modelHint.textContent =
+              'Модель найдена: demo/models/enhance_params.json — можно выбрать режим «Модель».';
+            return true;
+          }
+        } catch (_) {}
+        modelHint.textContent =
+          'Файла модели нет. Сейчас доступна только эвристика. После train: ' +
+          'python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.json ' +
+          'затем npm run build (скопирует в demo/models/).';
+        return false;
+      }
+
+      const modelOk = await checkModel();
+
+      function selectedMode() {
+        return document.querySelector('input[name="predictor"]:checked')?.value || 'heuristic';
+      }
+
+      function setWorkingBlob(blob, label) {
+        currentBlob = blob;
+        if (beforeUrl) URL.revokeObjectURL(beforeUrl);
+        beforeUrl = URL.createObjectURL(blob);
+        before.src = beforeUrl;
+        runBtn.disabled = false;
+        degradeBtn.disabled = false;
+        statusEl.textContent = label;
+      }
+
+      enhancer.on('status', (info) => {
+        const pred = info.metrics?.predictor ? ` · ${info.metrics.predictor}` : '';
+        statusEl.textContent =
+          `${info.id} · ${info.status} · ${(info.progress * 100).toFixed(0)}%` +
+          pred +
+          (info.error ? ` · ${info.error}` : '') +
+          (info.metrics ? ` · ${info.metrics.elapsedMs.toFixed(0)} ms` : '');
+        prog.style.width = `${(info.progress * 100).toFixed(1)}%`;
+        if (info.metrics?.params) {
+          const p = info.metrics.params;
+          paramsEl.textContent = `b=${p.brightness.toFixed(2)} c=${p.contrast.toFixed(2)} s=${p.saturation.toFixed(2)}`;
+        }
+      });
+
+      fileInput.addEventListener('change', () => {
+        const f = fileInput.files?.[0] ?? null;
+        after.removeAttribute('src');
+        if (f) setWorkingBlob(f, `Файл: ${f.name}`);
+        else {
+          currentBlob = null;
+          runBtn.disabled = true;
+          degradeBtn.disabled = true;
+          statusEl.textContent = 'Ожидание файла…';
+        }
+      });
+
+      degradeBtn.addEventListener('click', async () => {
+        if (!currentBlob) return;
+        degradeBtn.disabled = true;
+        try {
+          const factors = randomDegradeFactors({ min: 0.7, max: 1.3 });
+          const { blob } = await degradeBlob(currentBlob, factors);
+          setWorkingBlob(
+            blob,
+            `Испорчено: b=${factors.brightness.toFixed(2)} c=${factors.contrast.toFixed(2)} s=${factors.saturation.toFixed(2)}`,
+          );
+          after.removeAttribute('src');
+        } catch (e) {
+          statusEl.textContent = `Ошибка порчи: ${e.message}`;
+        } finally {
+          degradeBtn.disabled = !currentBlob;
+        }
+      });
+
+      runBtn.addEventListener('click', async () => {
+        if (!currentBlob) return;
+        const mode = selectedMode();
+        if (mode === 'model' && !modelOk) {
+          statusEl.textContent = 'Модель не найдена — выберите эвристику или экспортируйте веса.';
+          return;
+        }
+        runBtn.disabled = true;
+        cancelBtn.disabled = false;
+        after.removeAttribute('src');
+        try {
+          currentTask = await enhancer.submit(currentBlob, {
+            outputType: 'image/jpeg',
+            quality: 0.92,
+            predictorMode: mode,
+            modelUrl: mode === 'model' ? MODEL_URL : undefined,
+          });
+          const blob = await enhancer.getResult(currentTask);
+          after.src = URL.createObjectURL(blob);
+        } catch (e) {
+          statusEl.textContent = `Ошибка: ${e.message}`;
+        } finally {
+          runBtn.disabled = !currentBlob;
+          cancelBtn.disabled = true;
+          currentTask = null;
+        }
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        if (currentTask) enhancer.cancel(currentTask);
+      });
+    </script>
+  </body>
+</html>

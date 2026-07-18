@@ -1,0 +1,35 @@
+{
+  "name": "vk-image-enhancer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "In-browser ML image enhancement (brightness, contrast, saturation)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/bundle-heic.mjs && node scripts/copy-worker.mjs",
+    "dev": "tsc -p tsconfig.json --watch",
+    "check:size": "node scripts/check-size.mjs",
+    "demo": "npm run build && node scripts/demo-server.mjs",
+    "demo:serve": "node scripts/demo-server.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "heic2any": "^0.0.4"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

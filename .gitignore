@@ -1,0 +1,12 @@
+node_modules/
+dist/
+demo/dist/
+*.pt
+*.onnx
+__pycache__/
+.venv/
+checkpoints/
+tools/train/dataset/
+tools/train/raw/
+.DS_Store
+*.log
