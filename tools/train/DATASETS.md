@@ -124,11 +124,14 @@ python augment.py --input ./raw/mixed --output ./dataset --count 20000
 
 Если сеть режет всё: достаточно **DIV2K + samples + свои кадры** — для TinyCNN этого хватает на baseline.
 
-## Диск под полный цикл (ориентир)
+Датасеты для обучения модели брались из Kaggle
+https://www.kaggle.com/datasets/sayangoswami/reddit-memes-dataset/data
+https://www.kaggle.com/datasets/kaustubhdhote/human-faces-dataset?resource=download
+https://www.kaggle.com/datasets/soumikrakshit/div2k-high-resolution-images
 
-| Этап | Место |
-|------|-------|
-| samples | &lt; 50 МБ |
-| DIV2K valid + zip | ~1 ГБ |
-| dataset 20k JPG 224 | ~0.5–1.5 ГБ |
-| checkpoint .pt + onnx | &lt; 50 МБ |
+Объединились в один
+
+python augment.py --output ./dataset --seed 42 --source "./raw/div2k/DIV2K_valid_HR:5000" --source "./raw/HumanFacesDataset/RealImages:7000" --source "./raw/memes/memes:5000:0.25"
+
+После чего перемешались и получился итоговый датасет
+python shuffle_dataset.py --data ./dataset --seed 42
