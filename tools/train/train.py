@@ -48,24 +48,24 @@ class ParamDataset(Dataset):
 
 
 class TinyParamNet(nn.Module):
-    """Very small CNN — keep ONNX/INT8 under a few MB."""
+    """CNN for 3-param regression. Channels: 32→64→128, head 128→64→3."""
 
     def __init__(self) -> None:
         super().__init__()
         self.features = nn.Sequential(
-            nn.Conv2d(3, 16, 3, stride=2, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 32, 3, stride=2, padding=1),
+            nn.Conv2d(3, 32, 3, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, 3, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d(1),
         )
         self.head = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(64, 32),
+            nn.Linear(128, 64),
             nn.ReLU(inplace=True),
-            nn.Linear(32, 3),
+            nn.Linear(64, 3),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -98,7 +98,23 @@ def main() -> None:
         action="store_true",
         help="Overwrite --out if it exists (default: save as model_2.pt, model_3.pt, …)",
     )
+    ap.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="Continue training from an existing .pt checkpoint (fine-tune)",
+    )
+    ap.add_argument(
+        "--save-every",
+        type=int,
+        default=0,
+        help="Save intermediate weights every N epochs (0 = only final). "
+        "Files: <stem>_ep005.pt, <stem>_ep010.pt, … next to --out",
+    )
     args = ap.parse_args()
+
+    if args.save_every < 0:
+        raise SystemExit("--save-every must be >= 0")
 
     ds = ParamDataset(args.data)
     n_val = max(1, len(ds) // 10)
@@ -110,6 +126,10 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"device: {device}")
     model = TinyParamNet().to(device)
+    if args.resume is not None:
+        ckpt = torch.load(args.resume, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model"])
+        print(f"resumed from {args.resume}")
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr)
     loss_fn = nn.MSELoss()
 
@@ -117,6 +137,20 @@ def main() -> None:
     if out_path != args.out:
         print(f"{args.out} exists → saving as {out_path}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    if args.save_every:
+        print(f"checkpoints every {args.save_every} epoch(s) → {out_path.stem}_epXXX{out_path.suffix}")
+
+    def save_ckpt(path: Path, epoch: int, train_loss: float, val_loss: float) -> None:
+        torch.save(
+            {
+                "model": model.state_dict(),
+                "arch": "TinyParamNet",
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+            },
+            path,
+        )
 
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -140,7 +174,12 @@ def main() -> None:
         val_loss = vtotal / max(1, n_val)
         print(f"epoch {epoch:03d}  train={train_loss:.5f}  val={val_loss:.5f}")
 
-    torch.save({"model": model.state_dict(), "arch": "TinyParamNet"}, out_path)
+        if args.save_every and epoch % args.save_every == 0 and epoch != args.epochs:
+            mid = out_path.parent / f"{out_path.stem}_ep{epoch:03d}{out_path.suffix}"
+            save_ckpt(mid, epoch, train_loss, val_loss)
+            print(f"  checkpoint → {mid}")
+
+    save_ckpt(out_path, args.epochs, train_loss, val_loss)
     print(f"saved {out_path}")
 
 

@@ -1,162 +1,212 @@
 """
-Download domain-specific image sets for more diverse training.
+Download domain image sets via Wikimedia Commons API (no LFW / gated HF).
 
 Presets:
-  faces  — LFW (Labeled Faces in the Wild), real face photos / «аватарки»
-  anime  — anime face images via HuggingFace datasets (streaming)
+  faces   — portrait photos
+  anime   — anime / manga related images
+  nature  — landscapes / nature
+  people  — people photographs (broader than portraits)
 
 Usage:
-  pip install -r requirements.txt
   python download_domain.py --preset faces --out ./raw/faces --limit 300
   python download_domain.py --preset anime --out ./raw/anime --limit 300
 
-Then mix folders into one input for augment, e.g.:
-  python augment.py --input ./raw/mixed --output ./dataset --count 20000
-(copy/symlink faces+anime+div2k samples into raw/mixed)
+Also reliable in this repo:
+  python download_samples.py --out ./raw/samples --count 200
+  python download_div2k.py --out ./raw/div2k
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import random
-import shutil
+import ssl
 import sys
-import tarfile
+import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
-EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+# Category → Wikimedia Commons title (without "Category:" prefix in some APIs we include it)
+PRESETS: dict[str, list[str]] = {
+    "faces": [
+        "Category:Portrait_photographs",
+        "Category:Self-portraits",
+        "Category:Portrait_photographs_of_women",
+        "Category:Portrait_photographs_of_men",
+    ],
+    "anime": [
+        "Category:Anime_and_manga",
+        "Category:Anime_screenshots",
+        "Category:Anime_illustrations",
+        "Category:Manga_covers",
+    ],
+    "nature": [
+        "Category:Landscapes",
+        "Category:Nature_photographs",
+        "Category:Forests",
+    ],
+    "people": [
+        "Category:People_of_Europe",
+        "Category:Street_photography",
+        "Category:Crowds",
+    ],
+}
 
-LFW_URL = "http://vis-www.cs.umass.edu/lfw/lfw.tgz"
-
-# Streaming HF dataset of anime-style faces (change if upstream moves)
-ANIME_HF_ID = "cchen856/anime-faces"
-
-
-def download_file(url: str, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if dest.exists() and dest.stat().st_size > 0:
-        print(f"Already exists: {dest}")
-        return
-    print(f"Downloading {url}")
-    print(f"→ {dest}")
-
-    def hook(block_num: int, block_size: int, total: int) -> None:
-        if total <= 0:
-            return
-        done = min(block_num * block_size, total)
-        pct = done * 100.0 / total
-        sys.stdout.write(f"\r  {pct:5.1f}%  {done/1e6:.1f}/{total/1e6:.1f} MB")
-        sys.stdout.flush()
-
-    urllib.request.urlretrieve(url, dest, reporthook=hook)
-    print()
-
-
-def save_limited_images(src_root: Path, out: Path, limit: int, seed: int) -> int:
-    files = [p for p in src_root.rglob("*") if p.suffix.lower() in EXTS]
-    random.Random(seed).shuffle(files)
-    files = files[:limit]
-    out.mkdir(parents=True, exist_ok=True)
-    for i, p in enumerate(files):
-        dest = out / f"{i:05d}{p.suffix.lower()}"
-        shutil.copy2(p, dest)
-    return len(files)
+API = "https://commons.wikimedia.org/w/api.php"
+UA = "VKProjDatasetBot/1.0 (educational; local training only)"
 
 
-def download_faces(out: Path, limit: int, seed: int, keep_archive: bool) -> None:
-    archive = out.parent / "lfw.tgz"
-    extract_dir = out.parent / "_lfw_extract"
-    download_file(LFW_URL, archive)
-
-    if extract_dir.exists():
-        shutil.rmtree(extract_dir)
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    print("Extracting LFW …")
-    with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(extract_dir)
-
-    # lfw/<name>/*.jpg
-    n = save_limited_images(extract_dir, out, limit, seed)
-    shutil.rmtree(extract_dir, ignore_errors=True)
-    if not keep_archive:
-        archive.unlink(missing_ok=True)
-    print(f"Saved {n} face images → {out.resolve()}")
-
-
-def download_anime(out: Path, limit: int, seed: int, hf_id: str) -> None:
-    try:
-        from datasets import load_dataset
-    except ImportError as e:
-        raise SystemExit(
-            "Anime preset needs: pip install datasets huggingface_hub pillow\n"
-            f"Original error: {e}"
-        ) from e
-
-    out.mkdir(parents=True, exist_ok=True)
-    print(f"Streaming HuggingFace dataset: {hf_id}")
-    print("(first run may download indexes; review licenses / NSFW policy)")
-
-    ds = load_dataset(hf_id, split="train", streaming=True)
-    ds = ds.shuffle(seed=seed, buffer_size=2_000)
-
-    saved = 0
-    for row in ds:
-        img = row.get("image") or row.get("img")
-        if img is None:
-            for v in row.values():
-                if hasattr(v, "save"):
-                    img = v
-                    break
-        if img is None:
-            continue
-        dest = out / f"{saved:05d}.jpg"
+def http_json(url: str, retries: int = 4) -> dict:
+    ctx = ssl.create_default_context()
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    last: Exception | None = None
+    for attempt in range(1, retries + 1):
         try:
-            if getattr(img, "mode", None) != "RGB":
-                img = img.convert("RGB")
-            img.save(dest, quality=92)
-        except Exception as ex:
-            print(f"  skip: {ex}")
-            continue
-        saved += 1
-        if saved % 25 == 0:
-            print(f"  {saved}/{limit}")
-        if saved >= limit:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+            last = e
+            time.sleep(1.5 * attempt)
+    raise RuntimeError(f"API request failed: {url}") from last
+
+
+def http_download(url: str, dest: Path, retries: int = 3) -> bool:
+    ctx = ssl.create_default_context()
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    for attempt in range(1, retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=90, context=ctx) as resp:
+                data = resp.read()
+            if len(data) < 1000:
+                return False
+            dest.write_bytes(data)
+            return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            time.sleep(attempt)
+    return False
+
+
+def iter_category_images(category: str, max_pages: int = 30):
+    """Yield dicts with thumb/original url from a Commons category."""
+    cont: dict[str, str] | None = None
+    pages = 0
+    while pages < max_pages:
+        params = {
+            "action": "query",
+            "generator": "categorymembers",
+            "gcmtitle": category,
+            "gcmtype": "file",
+            "gcmlimit": "50",
+            "prop": "imageinfo",
+            "iiprop": "url|mime|size",
+            "iiurlwidth": "640",
+            "format": "json",
+        }
+        if cont:
+            params.update(cont)
+        url = API + "?" + urllib.parse.urlencode(params)
+        data = http_json(url)
+        pages_data = (data.get("query") or {}).get("pages") or {}
+        for page in pages_data.values():
+            infos = page.get("imageinfo") or []
+            if not infos:
+                continue
+            info = infos[0]
+            mime = (info.get("mime") or "").lower()
+            if not mime.startswith("image/"):
+                continue
+            if mime in ("image/svg+xml", "image/gif"):
+                continue
+            # Prefer scaled thumb, else original
+            img_url = info.get("thumburl") or info.get("url")
+            if not img_url:
+                continue
+            yield {
+                "title": page.get("title", "file"),
+                "url": img_url,
+                "mime": mime,
+            }
+
+        cont_raw = data.get("continue")
+        if not cont_raw:
+            break
+        cont = {k: str(v) for k, v in cont_raw.items()}
+        pages += 1
+        time.sleep(0.2)  # be polite to Commons
+
+
+def download_preset(preset: str, out: Path, limit: int, seed: int) -> int:
+    cats = PRESETS[preset]
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Collect candidates from all categories, then shuffle
+    candidates: list[dict] = []
+    seen_urls: set[str] = set()
+    print(f"Collecting from Wikimedia Commons ({preset}) …")
+    for cat in cats:
+        print(f"  category: {cat}")
+        try:
+            for item in iter_category_images(cat):
+                if item["url"] in seen_urls:
+                    continue
+                seen_urls.add(item["url"])
+                candidates.append(item)
+                if len(candidates) >= limit * 4:
+                    break
+        except Exception as e:
+            print(f"  skip category ({e})")
+        if len(candidates) >= limit * 4:
             break
 
-    if saved == 0:
+    if not candidates:
         raise SystemExit(
-            f"No images from {hf_id}. Try another id via --hf-id, "
-            "or put anime faces manually into the out folder."
+            f"Не удалось получить список файлов для preset={preset}.\n"
+            "Проверьте сеть / доступ к commons.wikimedia.org.\n"
+            "Альтернативы: download_samples.py, download_div2k.py или свои фото в raw/."
         )
-    print(f"Saved {saved} anime images → {out.resolve()}")
+
+    random.Random(seed).shuffle(candidates)
+    saved = 0
+    for item in candidates:
+        if saved >= limit:
+            break
+        ext = ".jpg"
+        mime = item["mime"]
+        if "png" in mime:
+            ext = ".png"
+        elif "webp" in mime:
+            ext = ".webp"
+        dest = out / f"{saved:05d}{ext}"
+        ok = http_download(item["url"], dest)
+        if not ok:
+            continue
+        saved += 1
+        if saved % 25 == 0 or saved == limit:
+            print(f"  saved {saved}/{limit}")
+        time.sleep(0.15)
+
+    return saved
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Download faces / anime image presets")
-    ap.add_argument("--preset", choices=("faces", "anime"), required=True)
+    ap = argparse.ArgumentParser(description="Download faces/anime/nature via Wikimedia Commons")
+    ap.add_argument("--preset", choices=sorted(PRESETS.keys()), required=True)
     ap.add_argument("--out", type=Path, required=True)
-    ap.add_argument("--limit", type=int, default=300)
+    ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--keep-archive", action="store_true")
-    ap.add_argument(
-        "--hf-id",
-        default=ANIME_HF_ID,
-        help="HuggingFace dataset id for --preset anime",
-    )
     args = ap.parse_args()
 
     if args.limit <= 0:
         raise SystemExit("--limit must be positive")
 
-    if args.preset == "faces":
-        download_faces(args.out, args.limit, args.seed, args.keep_archive)
-    else:
-        download_anime(args.out, args.limit, args.seed, args.hf_id)
-
-    print()
-    print("Next (example mix):")
-    print(f"  python augment.py --input {args.out} --output ./dataset --count 10000")
+    n = download_preset(args.preset, args.out, args.limit, args.seed)
+    if n == 0:
+        raise SystemExit("Downloaded 0 images.")
+    print(f"Done: {n} images → {args.out.resolve()}")
+    print(f"Next: python augment.py --input {args.out} --output ./dataset --count 10000")
 
 
 if __name__ == "__main__":

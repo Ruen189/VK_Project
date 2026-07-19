@@ -67,20 +67,39 @@ dataset/
 
 Старый датасет (Pillow-labels) лучше пересобрать: `python clean_dataset.py -y` → снова `augment.py`.
 
-## Лица (аватарки) и аниме
+### Несколько источников с разным числом и силой порчи
 
 ```bash
-python download_domain.py --preset faces --out ./raw/faces --limit 300
-python download_domain.py --preset anime --out ./raw/anime --limit 300
-# при необходимости: --hf-id other/dataset-on-huggingface
+python clean_dataset.py -y
+python augment.py --output ./dataset --seed 42 ^
+  --source "./raw/div2k/DIV2K_valid_HR:5000" ^
+  --source "./raw/Human Faces Dataset/RealImages:7000" ^
+  --source "./raw/memes/memes:5000:0.25"
 ```
 
-| Preset | Источник | Содержание | Размер порядка |
-|--------|----------|------------|----------------|
-| **faces** | [LFW](http://vis-www.cs.umass.edu/lfw/) | реальные лица / «аватарки» | архив ~170 МБ, потом `--limit` файлов |
-| **anime** | HuggingFace (`cchen856/anime-faces` по умолчанию) | аниме-лица | зависит от `--limit`; нужен `datasets` |
+Итог: **17000** уникальных `000000.jpg`…`016999.jpg`, один согласованный `labels.json`.  
+`strength=0.25` = порча **в 4 раза слабее** (отклонения параметров от «без изменений» ×0.25).  
+Формат: `path:count` или `path:count:strength`. Перед записью папка `images/` очищается — перезаписей нет.
 
-Смешать с DIV2K (рекомендуется для обобщения):
+## Лица / аниме / природа (Wikimedia Commons)
+
+LFW и многие HF-датасеты часто **недоступны** (SSL, гео, gated). Рабочий вариант в репо — категории Wikimedia:
+
+```bash
+python download_domain.py --preset faces --out ./raw/faces --limit 200
+python download_domain.py --preset anime --out ./raw/anime --limit 200
+python download_domain.py --preset nature --out ./raw/nature --limit 200
+python download_domain.py --preset people --out ./raw/people --limit 200
+```
+
+| Preset | Содержание |
+|--------|------------|
+| faces | портретные фото |
+| anime | аниме / манга (скриншоты, иллюстрации) |
+| nature | пейзажи / природа |
+| people | люди / улица |
+
+Смешать с DIV2K:
 
 ```bash
 mkdir raw\mixed
@@ -90,21 +109,20 @@ xcopy /E /I raw\anime raw\mixed\anime
 python augment.py --input ./raw/mixed --output ./dataset --count 20000
 ```
 
-> Разнообразие доменов (фото / лица / аниме) сильнее влияет на устойчивость, чем ещё 10k копий одного DIV2K.  
-> Аниме-датасеты часто имеют NSFW и разные лицензии — проверяйте перед сдачей.
+## Какие ещё датасеты можно взять
 
-## Другие источники (вручную / позже)
+| Источник | Как | Заметки |
+|----------|-----|---------|
+| **picsum** (`download_samples.py`) | авто | уже работает; общие сток-фото |
+| **DIV2K** (`download_div2k.py`) | авто | HR-сцены; у вас уже ок |
+| **Wikimedia** (`download_domain.py`) | авто | лица / аниме / природа |
+| **Свои фото / аватары** | вручную в `raw/` | лучший контроль прав |
+| COCO / Open Images | вручную с сайта | быт, объекты (большие) |
+| FFHQ / CelebA | вручную / HF (часто gated) | качественные лица |
+| Danbooru | вручную | аниме; NSFW / лицензии |
+| FiveK / PPR10K | вручную | пары ретуши |
 
-| Датасет | Зачем | Размер порядка |
-|---------|-------|----------------|
-| COCO / Open Images | быт, объекты, улица | десятки ГБ |
-| FFHQ / CelebA-HQ | высококачественные лица | несколько ГБ |
-| MIT-Adobe FiveK | пары «сырое → ретушь» | ~50 ГБ |
-| PPR10K | портретная ретушь | несколько ГБ |
-| Danbooru (полный) | максимальное аниме-разнообразие | очень большой |
-| Своя съёмка / свои аватары | контроль прав и сцен | по желанию |
-
-Автоскачивание в репо: **samples**, **DIV2K**, **faces (LFW)**, **anime (HF)**.
+Если сеть режет всё: достаточно **DIV2K + samples + свои кадры** — для TinyCNN этого хватает на baseline.
 
 ## Диск под полный цикл (ориентир)
 
