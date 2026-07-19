@@ -48,7 +48,7 @@ export interface SubmitOptions {
   quality?: number;
   /** heuristic (default) or trained TinyCNN JSON weights */
   predictorMode?: PredictorMode;
-  /** URL to enhance_params.json when predictorMode is "model" */
+  /** URL to enhance_params.bin (or legacy .json) when predictorMode is "model" */
   modelUrl?: string;
 }
 

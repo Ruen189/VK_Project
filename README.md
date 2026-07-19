@@ -1,16 +1,20 @@
 # VK Image Enhancer
 
-Клиентский модуль улучшения изображений **в браузере**: нейросеть (или эвристика) подбирает параметры яркости / контраста / цветности, затем `apply` применяет их к полному кадру в Web Worker (UI не блокируется).
+Клиентский модуль улучшения изображений **в браузере**: нейросеть (или эвристика) подбирает параметры яркости / контраста / цветности, затем `apply` применяет их к полному кадру.
+
+**Продукт — JS-библиотека** (`ImageEnhancer` в `dist/`), не сайт. `demo/` — витрина API.
+
+Обработка идёт **асинхронно в Web Worker**: главный поток UI не блокируется (можно двигать страницу, жать «Отмена», следить за progress).
 
 | Требование | Статус |
 |------------|--------|
 | Современные браузеры | Chrome / Firefox / Edge / Safari |
 | Форматы | JPG, PNG, BMP, HEIC |
-| До 15 Мпк, ≤30 с (цель avg ~5 с) | JS-apply; на больших кадрах может быть медленнее цели |
-| Бандл ≤10 МБ | `npm run check:size` (~1.4 МБ с HEIC-decoder) |
-| Task API + progress / cancel | да |
+| Асинхронность (без блокировки UI) | да — Dedicated Web Worker |
+| До 15 Мпк, ≤30 с | да; типично **~70 мс – 2 с** |
+| Бандл ≤10 МБ | да (~1.4 МБ dist + ~0.2 МБ веса) |
 
-## Быстрый старт
+## Быстрый старт (demo)
 
 ```bash
 npm install
@@ -18,15 +22,49 @@ npm test
 npm run demo
 ```
 
-Откроется **http://127.0.0.1:5173/** (если нет — откройте вручную). Остановка: `Ctrl+C`.
+Откроется **http://127.0.0.1:5173/**. По умолчанию — **ML-модель** (`enhance_params.bin`). Остановка: `Ctrl+C`.
 
-В demo: выбор файла → опционально «Синтетически испортить» → «Улучшить».  
-Предиктор: **эвристика** или **TinyCNN** (нужен `models/enhance_params.json`).
+## Качество
 
-## API
+Модель обучена на **17 000** случайно испорченных фотографиях (синтетическая порча в пространстве `apply`), собранных из трёх датасетов:
+
+- [DIV2K High Resolution Images](https://www.kaggle.com/datasets/soumikrakshit/div2k-high-resolution-images)
+- [Human Faces Dataset](https://www.kaggle.com/datasets/kaustubhdhote/human-faces-dataset?resource=download)
+- [Reddit Memes Dataset](https://www.kaggle.com/datasets/sayangoswami/reddit-memes-dataset/data)
+
+Пример (вход после порчи → результат TinyCNN):
+
+![Качество: цветок до/после](assets/quality-flower.png)
+
+## Скорость
+
+Время end-to-end обычно **от ~70 мс до ~2 с** в зависимости от разрешения и формата. **HEIC** декодируется дольше (конвертация на main thread), затем тот же пайплайн в Worker.
+
+![Скорость / превью обработки](assets/formats-bulb.png)
+
+## Форматы
+
+Поддерживаются **JPG, PNG, HEIC, BMP** (HEIC → PNG через bundled-декодер, превью в demo тоже декодируется).
+
+## Размер решения
+
+| Что | Объём (ориентир) |
+|-----|------------------|
+| Исходный код проекта (src, scripts, tools/train, demo HTML, конфиги) | ~0.11 МБ |
+| Собранный `dist/` (модуль + HEIC vendor) | ~1.4 МБ |
+| Веса `enhance_params.bin` (float16) | ~0.2 МБ |
+| **Суммарно для встраивания** | **≲ 1.6 МБ** (лимит 10 МБ) |
+
+Проверка: `npm run check:size`.
+
+## Встраивание как библиотека
+
+1. `npm run build` — артефакты в `dist/` (и `models/` → `demo/models/`).
+2. Отдайте со своего хоста **весь** `dist/` и при необходимости `enhance_params.bin`.
+3. Пример:
 
 ```ts
-import { ImageEnhancer } from './dist/index.js'; // или ваш путь к пакету
+import { ImageEnhancer } from './dist/index.js';
 
 const enhancer = new ImageEnhancer({
   workerUrl: new URL('./dist/worker.js', import.meta.url),
@@ -39,14 +77,16 @@ enhancer.on('status', (info) => {
 
 const id = await enhancer.submit(file, {
   outputType: 'image/jpeg',
-  predictorMode: 'heuristic', // или 'model'
-  modelUrl: './models/enhance_params.json', // для mode: 'model'
+  predictorMode: 'model', // по умолчанию в demo — модель
+  modelUrl: './models/enhance_params.bin',
 });
 
 const blob = await enhancer.getResult(id);
 enhancer.cancel(id);
 enhancer.dispose();
 ```
+
+### API модуля
 
 | Метод / событие | Назначение |
 |-----------------|------------|
@@ -56,48 +96,37 @@ enhancer.dispose();
 | `getResult` | готовый `Blob` |
 | `on('status')` | события смены статуса / прогресса |
 
-`b` / `c` / `s` в UI — предсказанные **brightness**, **contrast**, **saturation**.
+`b` / `c` / `s` — предсказанные **brightness**, **contrast**, **saturation**.
 
 ## Структура
 
 ```
-src/            API, Worker, decode/apply, эвристика, TinyCNN
-demo/           страница для ручной проверки
-models/         enhance_params.json после экспорта весов
+src/            исходники библиотеки (API, Worker, decode/apply, ML)
+demo/           витрина API
+models/         enhance_params.bin (веса для браузера)
+assets/         картинки для README
 tools/train/    датасеты, augment, PyTorch train/export
-scripts/        build helpers (HEIC bundle, demo server, size check)
-benchmarks/     место под эталонные кадры приёмки
+scripts/        build helpers
 ```
+
+Если в клоне есть `models/enhance_params.bin`, после `npm run build` demo использует **эти веса**. Без файла — только эвристика.
 
 ## Обучение модели
 
-1. Скачать исходники → 2. `augment.py` (labels в пространстве `apply`) → 3. `train.py` → 4. `export_web_weights.py` → 5. `npm run demo`, режим «Модель».
+1. Исходники в `tools/train/raw/` → 2. `augment.py` → 3. `train.py` → 4. `export_web_weights.py` → `.bin` → 5. `npm run build`
 
-```bash
-cd tools/train
-pip install -r requirements.txt
+### Несколько источников и сила порчи
 
-# данные (любой микс)
-python download_samples.py --out ./raw/samples --count 100
-# python download_div2k.py --out ./raw/div2k
-# python download_domain.py --preset faces --out ./raw/faces --limit 300
-# python download_domain.py --preset anime --out ./raw/anime --limit 300
+Формат `--source`: `путь:число` или `путь:число:сила` (`1.0` обычная, `0.25` в 4 раза слабее).  
+`--seed 42` — воспроизводимый рандом.
 
-python clean_dataset.py -y          # только ./dataset, не raw и не checkpoints
-python augment.py --input ./raw/div2k/DIV2K_valid_HR --output ./dataset --count 10000
-python train.py --data ./dataset --epochs 20 --out ./checkpoints/model.pt
-python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.json
+```powershell
+python clean_dataset.py -y
+python augment.py --output ./dataset --seed 42 --source "./raw/div2k/DIV2K_valid_HR:5000" --source "./raw/HumanFacesDataset/RealImages:7000" --source "./raw/memes/memes:5000:0.25"
+python shuffle_dataset.py --data ./dataset --seed 42
+python train.py --data ./dataset --epochs 20 --out ./checkpoints/model.pt --save-every 5
+python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.bin
 ```
 
-Повторный `train` без `--overwrite` пишет `model_2.pt`, `model_3.pt`, …  
-После смены JSON: `npm run build` и жёсткое обновление страницы demo.
-
-Подробности по датасетам: `tools/train/DATASETS.md`.
-
-## Чего ещё не хватает до идеала
-
-- **Замеры** тестирование на Safari затруднено
-- **Очередь задач** — сейчас по сути одна активная обработка в Worker
-- **Прод-сборка npm-пакета** (публичный entry, semver) при необходимости платформы
-- **Разнообразный датасет** под сдачу (микс photo / faces / anime)
-- Опционально: INT8 / ONNX Runtime Web вместо JSON-весов; lazy-HEIC отдельным chunk ещё сильнее ужать «core»
+Дообучение: `--resume ./checkpoints/model.pt` (лучше меньший `--lr`).  
+Подробнее: `tools/train/DATASETS.md`.

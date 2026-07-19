@@ -25,7 +25,7 @@ const MIME = {
   '.jpeg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.map': 'application/json',
-  '.wasm': 'application/wasm',
+  '.bin': 'application/octet-stream',
 };
 
 if (!existsSync(join(demoRoot, 'dist', 'index.js'))) {

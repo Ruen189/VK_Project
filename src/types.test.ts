@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { clipParams, clamp, PARAM_CLIP } from './types.js';
 import { HeuristicPredictor } from './ml/predictor.js';
+import { float16ToFloat32 } from './ml/tiny-cnn.js';
 import { stageProgress } from './pipeline/progress.js';
 import { sniffMime } from './pipeline/decode.js';
 
@@ -48,5 +49,12 @@ describe('HeuristicPredictor', () => {
     expect(p.brightness).toBeLessThanOrEqual(PARAM_CLIP.brightness.max);
     expect(p.contrast).toBeGreaterThanOrEqual(PARAM_CLIP.contrast.min);
     expect(p.saturation).toBeGreaterThanOrEqual(PARAM_CLIP.saturation.min);
+  });
+});
+
+describe('float16ToFloat32', () => {
+  it('decodes 1.0 and -2.0', () => {
+    expect(float16ToFloat32(0x3c00)).toBeCloseTo(1.0);
+    expect(float16ToFloat32(0xc000)).toBeCloseTo(-2.0);
   });
 });

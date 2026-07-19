@@ -63,7 +63,7 @@ export class OnnxParamPredictor implements ParamPredictor {
   async predict(_rgb: Float32Array, _w: number, _h: number): Promise<CorrectionParams> {
     void this.modelUrl;
     throw new Error(
-      'Use predictorMode: "model" with enhance_params.json (export_web_weights.py). ONNX Runtime path is optional later.',
+      'Use predictorMode: "model" with enhance_params.bin (export_web_weights.py).',
     );
   }
 }

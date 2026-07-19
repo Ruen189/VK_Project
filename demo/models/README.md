@@ -1,12 +1,12 @@
 # Model weights
 
-After training:
+After training, export binary weights (default float16):
 
 ```bash
 cd tools/train
-python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.json
-# optional ONNX:
-# python export_onnx.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.onnx
+python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.bin
+# float32:  --dtype float32
+# legacy JSON: --format json --out ../../models/enhance_params.json
 ```
 
 Then `npm run build` copies `models/` → `demo/models/`.
