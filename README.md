@@ -78,7 +78,7 @@ enhancer.on('status', (info) => {
 });
 
 const id = await enhancer.submit(file, {
-  outputType: 'image/jpeg',
+  // omit outputType → PNG if input has alpha, else JPEG
   predictorMode: 'model', // по умолчанию в demo — модель
   modelUrl: './models/enhance_params.bin',
 });

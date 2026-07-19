@@ -1,4 +1,11 @@
-/** Downscale ImageData for ML analysis (letterbox to square). */
+/**
+ * Downscale ImageData for ML analysis (letterbox to square).
+ * Letterbox + transparent pixels are composited onto mid-gray (0.5)
+ * so alpha holes do not read as black and bias brightness upward.
+ */
+
+/** Neutral gray fill: RGB 128 ≈ 0.5 in model space. */
+const MODEL_BG = '#808080';
 
 export function downscaleForModel(src: ImageData, size = 224): {
   data: Float32Array;
@@ -22,7 +29,7 @@ export function downscaleForModel(src: ImageData, size = 224): {
     throw new Error('2D context unavailable for downscale');
   }
 
-  ctx.fillStyle = '#000';
+  ctx.fillStyle = MODEL_BG;
   ctx.fillRect(0, 0, size, size);
 
   const ox = Math.floor((size - tw) / 2);

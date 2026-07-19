@@ -42,7 +42,10 @@ export interface TaskInfo {
 }
 
 export interface SubmitOptions {
-  /** Output MIME type. Default: image/jpeg */
+  /**
+   * Output MIME type.
+   * Default: image/png if the decoded image has alpha, otherwise image/jpeg.
+   */
   outputType?: 'image/jpeg' | 'image/png';
   /** JPEG quality 0..1. Default: 0.92 */
   quality?: number;

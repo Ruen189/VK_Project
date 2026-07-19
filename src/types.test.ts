@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { clipParams, clamp, PARAM_CLIP } from './types.js';
 import { HeuristicPredictor } from './ml/predictor.js';
 import { float16ToFloat32 } from './ml/tiny-cnn.js';
+import { imageHasAlpha } from './pipeline/alpha.js';
 import { stageProgress } from './pipeline/progress.js';
 import { sniffMime } from './pipeline/decode.js';
 
@@ -16,6 +17,18 @@ describe('clamp / clipParams', () => {
     expect(p.brightness).toBe(PARAM_CLIP.brightness.max);
     expect(p.contrast).toBe(PARAM_CLIP.contrast.min);
     expect(p.saturation).toBe(PARAM_CLIP.saturation.max);
+  });
+});
+
+describe('imageHasAlpha', () => {
+  it('is false for fully opaque pixels', () => {
+    const data = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255]);
+    expect(imageHasAlpha({ data } as ImageData)).toBe(false);
+  });
+
+  it('is true when any alpha is below 255', () => {
+    const data = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 0]);
+    expect(imageHasAlpha({ data } as ImageData)).toBe(true);
   });
 });
 

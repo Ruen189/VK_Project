@@ -6,6 +6,7 @@
  */
 
 import { applyCorrection } from './apply/correct.js';
+import { imageHasAlpha } from './pipeline/alpha.js';
 import { decodeImage, DecodeError } from './pipeline/decode.js';
 import { downscaleForModel } from './pipeline/downscale.js';
 import { encodeImage } from './pipeline/encode.js';
@@ -44,7 +45,6 @@ async function runJob(
   const controller = new AbortController();
   jobs.set(id, { controller });
   const started = performance.now();
-  const outputType = options?.outputType ?? 'image/jpeg';
   const quality = options?.quality ?? 0.92;
 
   try {
@@ -60,6 +60,10 @@ async function runJob(
     });
 
     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+
+    // Explicit outputType wins; otherwise PNG when alpha so holes stay transparent.
+    const outputType =
+      options?.outputType ?? (imageHasAlpha(image) ? 'image/png' : 'image/jpeg');
 
     emitStatus(id, 'analyzing', stageProgress('analyzing', 0));
     const thumb = downscaleForModel(image, 224);

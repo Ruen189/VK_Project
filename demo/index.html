@@ -255,7 +255,7 @@
         after.removeAttribute('src');
         try {
           currentTask = await enhancer.submit(currentBlob, {
-            outputType: 'image/jpeg',
+            // omit outputType → auto PNG when alpha, else JPEG
             quality: 0.92,
             predictorMode: mode,
             modelUrl: mode === 'model' ? MODEL_URL : undefined,
