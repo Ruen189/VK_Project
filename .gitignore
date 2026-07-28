@@ -1,6 +1,7 @@
 node_modules/
 dist/
 demo/dist/
+demo/reference/
 *.pt
 *.onnx
 __pycache__/

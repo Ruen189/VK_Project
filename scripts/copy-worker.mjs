@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, readdirSync, copyFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync, copyFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -18,6 +18,8 @@ const src = join(root, 'dist', 'worker.js');
 const demoDir = join(root, 'demo', 'dist');
 const modelsSrc = join(root, 'models');
 const modelsDst = join(root, 'demo', 'models');
+const referencesSrc = join(root, 'benchmarks', 'reference');
+const referencesDst = join(root, 'demo', 'reference');
 
 if (!existsSync(src)) {
   console.warn('dist/worker.js missing — run tsc first');
@@ -30,4 +32,18 @@ console.log('Copied dist → demo/dist');
 if (existsSync(modelsSrc)) {
   copyDir(modelsSrc, modelsDst);
   console.log('Copied models → demo/models');
+}
+
+if (existsSync(referencesSrc)) {
+  const references = readdirSync(referencesSrc, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+
+  mkdirSync(referencesDst, { recursive: true });
+  for (const name of references) {
+    copyFileSync(join(referencesSrc, name), join(referencesDst, name));
+  }
+  writeFileSync(join(referencesDst, 'manifest.json'), JSON.stringify(references, null, 2));
+  console.log(`Copied ${references.length} reference image(s) → demo/reference`);
 }
