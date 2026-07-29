@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipParams, clamp, PARAM_CLIP } from './types.js';
+import { clipParams, clamp, imageSizeWarning, PARAM_CLIP } from './types.js';
 import { HeuristicPredictor } from './ml/predictor.js';
 import { float16ToFloat32 } from './ml/tiny-cnn.js';
 import { imageHasAlpha } from './pipeline/alpha.js';
@@ -17,6 +17,13 @@ describe('clamp / clipParams', () => {
     expect(p.brightness).toBe(PARAM_CLIP.brightness.max);
     expect(p.contrast).toBe(PARAM_CLIP.contrast.min);
     expect(p.saturation).toBe(PARAM_CLIP.saturation.max);
+  });
+});
+
+describe('imageSizeWarning', () => {
+  it('warns with dimensions above 15 MP without rejecting the image', () => {
+    expect(imageSizeWarning(3472, 4624)).toBe('Image exceeds 15 MP (3472×4624)');
+    expect(imageSizeWarning(3000, 5000)).toBeUndefined();
   });
 });
 

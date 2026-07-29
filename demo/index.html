@@ -233,6 +233,7 @@
         statusEl.textContent =
           `${info.id} · ${info.status} · ${(info.progress * 100).toFixed(0)}%` +
           pred +
+          (info.warning ? ` · Предупреждение: ${info.warning}` : '') +
           (info.error ? ` · ${info.error}` : '') +
           (info.metrics ? ` · ${info.metrics.elapsedMs.toFixed(0)} ms` : '');
         prog.style.width = `${(info.progress * 100).toFixed(1)}%`;

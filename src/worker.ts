@@ -13,6 +13,7 @@ import { encodeImage } from './pipeline/encode.js';
 import { stageProgress } from './pipeline/progress.js';
 import { resolvePredictor } from './ml/predictor.js';
 import { makeTaskInfo, type MainToWorker, type WorkerToMain } from './messages.js';
+import { imageSizeWarning } from './types.js';
 import type { SubmitOptions, TaskId } from './types.js';
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -46,11 +47,20 @@ async function runJob(
   jobs.set(id, { controller });
   const started = performance.now();
   const quality = options?.quality ?? 0.92;
+  let warning: string | undefined;
+  const emitJobStatus = (
+    status: Parameters<typeof makeTaskInfo>[1],
+    progress: number,
+    extra?: Parameters<typeof makeTaskInfo>[3],
+  ): void => {
+    emitStatus(id, status, progress, { ...extra, warning });
+  };
 
   try {
-    emitStatus(id, 'decoding', stageProgress('decoding', 0));
+    emitJobStatus('decoding', stageProgress('decoding', 0));
     const image = await decodeImage(buffer, mime);
-    emitStatus(id, 'decoding', stageProgress('decoding', 1), {
+    warning = imageSizeWarning(image.width, image.height);
+    emitJobStatus('decoding', stageProgress('decoding', 1), {
       metrics: {
         elapsedMs: performance.now() - started,
         width: image.width,
@@ -65,12 +75,12 @@ async function runJob(
     const outputType =
       options?.outputType ?? (imageHasAlpha(image) ? 'image/png' : 'image/jpeg');
 
-    emitStatus(id, 'analyzing', stageProgress('analyzing', 0));
+    emitJobStatus('analyzing', stageProgress('analyzing', 0));
     const thumb = downscaleForModel(image, 224);
-    emitStatus(id, 'analyzing', stageProgress('analyzing', 0.4));
+    emitJobStatus('analyzing', stageProgress('analyzing', 0.4));
     const predictor = resolvePredictor(options?.predictorMode ?? 'heuristic', options?.modelUrl);
     const params = await predictor.predict(thumb.data, thumb.width, thumb.height);
-    emitStatus(id, 'analyzing', stageProgress('analyzing', 1), {
+    emitJobStatus('analyzing', stageProgress('analyzing', 1), {
       metrics: {
         elapsedMs: performance.now() - started,
         width: image.width,
@@ -83,18 +93,18 @@ async function runJob(
 
     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
-    emitStatus(id, 'applying', stageProgress('applying', 0));
+    emitJobStatus('applying', stageProgress('applying', 0));
     const corrected = await applyCorrection(image, params, {
       signal: controller.signal,
       onTile: (done, total) => {
-        emitStatus(id, 'applying', stageProgress('applying', done / total));
+        emitJobStatus('applying', stageProgress('applying', done / total));
       },
     });
 
-    emitStatus(id, 'encoding', stageProgress('encoding', 0));
+    emitJobStatus('encoding', stageProgress('encoding', 0));
     const blob = await encodeImage(corrected, outputType, quality);
     const outBuf = await blob.arrayBuffer();
-    emitStatus(id, 'encoding', stageProgress('encoding', 1));
+    emitJobStatus('encoding', stageProgress('encoding', 1));
 
     const metrics = {
       elapsedMs: performance.now() - started,
@@ -105,7 +115,7 @@ async function runJob(
       predictor: predictor.name,
     };
 
-    emitStatus(id, 'done', 1, { metrics });
+    emitJobStatus('done', 1, { metrics });
     post(
       {
         type: 'result',
@@ -118,12 +128,12 @@ async function runJob(
     );
   } catch (e) {
     if ((e as DOMException)?.name === 'AbortError' || controller.signal.aborted) {
-      emitStatus(id, 'cancelled', 0);
+      emitJobStatus('cancelled', 0);
       return;
     }
     const message =
       e instanceof DecodeError ? e.message : e instanceof Error ? e.message : String(e);
-    emitStatus(id, 'error', 0, { error: message });
+    emitJobStatus('error', 0, { error: message });
   } finally {
     jobs.delete(id);
   }

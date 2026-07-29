@@ -4,8 +4,6 @@
  * HEIC: preferably converted on main thread (see heic.ts); Safari may decode natively.
  */
 
-import { MAX_PIXELS } from '../types.js';
-
 export class DecodeError extends Error {
   constructor(message: string) {
     super(message);
@@ -78,12 +76,6 @@ async function bitmapToImageData(buffer: ArrayBuffer, mime: string): Promise<Ima
   }
 
   const { width, height } = bitmap;
-  if (width * height > MAX_PIXELS) {
-    bitmap.close();
-    throw new DecodeError(
-      `Image exceeds ${MAX_PIXELS / 1_000_000} MP limit (${width}×${height})`,
-    );
-  }
 
   const canvas =
     typeof OffscreenCanvas !== 'undefined'

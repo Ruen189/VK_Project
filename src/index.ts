@@ -3,6 +3,9 @@ export type { ImageEnhancerOptions } from './api.js';
 export {
   clipParams,
   clamp,
+  imageSizeWarning,
+  IMAGE_SIZE_WARNING_MEGAPIXELS,
+  IMAGE_SIZE_WARNING_PIXELS,
   MAX_MEGAPIXELS,
   MAX_PIXELS,
   PARAM_CLIP,

@@ -37,6 +37,8 @@ export interface TaskInfo {
   status: TaskStatus;
   /** 0..1 */
   progress: number;
+  /** Non-fatal condition; processing continues. */
+  warning?: string;
   error?: string;
   metrics?: TaskMetrics;
 }
@@ -57,8 +59,17 @@ export interface SubmitOptions {
 
 export type StatusListener = (info: TaskInfo) => void;
 
-export const MAX_MEGAPIXELS = 15;
-export const MAX_PIXELS = MAX_MEGAPIXELS * 1_000_000;
+export const IMAGE_SIZE_WARNING_MEGAPIXELS = 15;
+export const IMAGE_SIZE_WARNING_PIXELS = IMAGE_SIZE_WARNING_MEGAPIXELS * 1_000_000;
+/** @deprecated This is now a warning threshold, not a processing limit. */
+export const MAX_MEGAPIXELS = IMAGE_SIZE_WARNING_MEGAPIXELS;
+/** @deprecated This is now a warning threshold, not a processing limit. */
+export const MAX_PIXELS = IMAGE_SIZE_WARNING_PIXELS;
+
+export function imageSizeWarning(width: number, height: number): string | undefined {
+  if (width * height <= IMAGE_SIZE_WARNING_PIXELS) return undefined;
+  return `Image exceeds ${IMAGE_SIZE_WARNING_MEGAPIXELS} MP (${width}×${height})`;
+}
 
 export const PARAM_CLIP = {
   brightness: { min: -0.3, max: 0.3 },
