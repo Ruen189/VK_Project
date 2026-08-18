@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { clipParams, clamp, imageSizeWarning, PARAM_CLIP } from './types.js';
-import { HeuristicPredictor } from './ml/predictor.js';
+import { resolvePredictor } from './ml/predictor.js';
 import { float16ToFloat32 } from './ml/tiny-cnn.js';
 import { imageHasAlpha } from './pipeline/alpha.js';
 import { stageProgress } from './pipeline/progress.js';
@@ -59,16 +59,9 @@ describe('sniffMime', () => {
   });
 });
 
-describe('HeuristicPredictor', () => {
-  it('returns clipped params for a gray image', async () => {
-    const n = 224 * 224;
-    const rgb = new Float32Array(n * 3);
-    for (let i = 0; i < rgb.length; i++) rgb[i] = 0.3;
-    const p = await new HeuristicPredictor().predict(rgb, 224, 224);
-    expect(p.brightness).toBeGreaterThanOrEqual(PARAM_CLIP.brightness.min);
-    expect(p.brightness).toBeLessThanOrEqual(PARAM_CLIP.brightness.max);
-    expect(p.contrast).toBeGreaterThanOrEqual(PARAM_CLIP.contrast.min);
-    expect(p.saturation).toBeGreaterThanOrEqual(PARAM_CLIP.saturation.min);
+describe('resolvePredictor', () => {
+  it('requires a model URL', () => {
+    expect(() => resolvePredictor('')).toThrow(/modelUrl is required/);
   });
 });
 

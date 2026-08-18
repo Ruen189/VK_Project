@@ -21,8 +21,7 @@
         color: var(--fg);
         padding: 2rem;
       }
-      h1 { font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.5rem; }
-      p.lead { color: var(--muted); margin: 0 0 1.5rem; max-width: 40rem; line-height: 1.45; }
+      h1 { font-weight: 600; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
       .row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 0.85rem; }
       button, label.file {
         background: var(--accent);
@@ -46,15 +45,6 @@
         background: var(--panel);
         color: var(--fg);
       }
-      fieldset.mode {
-        border: 1px solid #2c353c;
-        border-radius: 8px;
-        padding: 0.75rem 1rem;
-        margin: 0 0 1rem;
-        max-width: 420px;
-      }
-      fieldset.mode legend { color: var(--muted); padding: 0 0.35rem; }
-      fieldset.mode label { display: block; margin: 0.35rem 0; cursor: pointer; }
       #status { font-variant-numeric: tabular-nums; color: var(--muted); }
       .bar {
         height: 6px;
@@ -82,25 +72,14 @@
         border-radius: 8px;
         overflow: hidden;
       }
-      figure img { display: block; width: 100%; height: auto; min-height: 80px; background: #0d1013; }
+      figure img { display: block; width: 100%; height: auto; background: #0d1013; }
+      figure img:not([src]) { display: none; }
       figcaption { padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--muted); }
       code { font-size: 0.8rem; }
-      #modelHint { font-size: 0.85rem; color: var(--muted); max-width: 40rem; margin: 0 0 1rem; }
     </style>
   </head>
   <body>
     <h1>Image Enhancer</h1>
-    <p class="lead">
-      По умолчанию — <strong>ML-модель TinyCNN</strong> (<code>enhance_params.bin</code>).
-      Тяжёлая обработка идёт в Web Worker (UI не блокируется). Эвристика — запасной режим.
-    </p>
-
-    <fieldset class="mode">
-      <legend>Предиктор параметров</legend>
-      <label><input type="radio" name="predictor" value="model" checked /> Модель TinyCNN (ML, .bin)</label>
-      <label><input type="radio" name="predictor" value="heuristic" /> Эвристика (без ML)</label>
-    </fieldset>
-    <p id="modelHint">Проверка модели…</p>
 
     <div class="row">
       <div class="image-source">
@@ -155,7 +134,6 @@
       const before = document.getElementById('before');
       const after = document.getElementById('after');
       const paramsEl = document.getElementById('params');
-      const modelHint = document.getElementById('modelHint');
 
       let currentBlob = null;
       let currentTask = null;
@@ -164,19 +142,10 @@
       async function checkModel() {
         try {
           const res = await fetch(MODEL_URL, { method: 'GET', cache: 'no-store' });
-          if (res.ok) {
-            modelHint.textContent =
-              'ML-модель найдена: demo/models/enhance_params.bin — режим «Модель» активен по умолчанию.';
-            return true;
-          }
-        } catch (_) {}
-        modelHint.textContent =
-          'Файла enhance_params.bin нет. Переключитесь на эвристику или экспортируйте веса: ' +
-          'python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../models/enhance_params.bin ' +
-          'затем npm run build.';
-        const heur = document.querySelector('input[name="predictor"][value="heuristic"]');
-        if (heur) heur.checked = true;
-        return false;
+          return res.ok;
+        } catch (_) {
+          return false;
+        }
       }
 
       const modelOk = await checkModel();
@@ -201,10 +170,6 @@
       }
 
       await loadReferences();
-
-      function selectedMode() {
-        return document.querySelector('input[name="predictor"]:checked')?.value || 'model';
-      }
 
       /** Chrome/Firefox cannot show HEIC in <img> — decode to PNG/JPEG for preview. */
       async function toDisplayableBlob(blob, nameHint = '') {
@@ -249,6 +214,9 @@
         referenceSelect.value = '';
         if (!f) {
           currentBlob = null;
+          if (beforeUrl) URL.revokeObjectURL(beforeUrl);
+          beforeUrl = null;
+          before.removeAttribute('src');
           runBtn.disabled = true;
           degradeBtn.disabled = true;
           statusEl.textContent = 'Ожидание файла…';
@@ -306,9 +274,8 @@
 
       runBtn.addEventListener('click', async () => {
         if (!currentBlob) return;
-        const mode = selectedMode();
-        if (mode === 'model' && !modelOk) {
-          statusEl.textContent = 'Модель не найдена — выберите эвристику или экспортируйте .bin.';
+        if (!modelOk) {
+          statusEl.textContent = 'Модель не найдена: положите enhance_params.bin в models/ и выполните npm run build.';
           return;
         }
         runBtn.disabled = true;
@@ -316,10 +283,8 @@
         after.removeAttribute('src');
         try {
           currentTask = await enhancer.submit(currentBlob, {
-            // omit outputType → auto PNG when alpha, else JPEG
             quality: 0.92,
-            predictorMode: mode,
-            modelUrl: mode === 'model' ? MODEL_URL : undefined,
+            modelUrl: MODEL_URL,
           });
           const blob = await enhancer.getResult(currentTask);
           after.src = URL.createObjectURL(blob);

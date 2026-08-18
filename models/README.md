@@ -11,4 +11,4 @@ python export_web_weights.py --checkpoint ./checkpoints/model.pt --out ../../mod
 
 Then `npm run build` copies `models/` → `demo/models/`.
 
-In the demo, select **Модель TinyCNN**. Without this file the demo uses **эвристику** only.
+The demo requires this file: without it enhancement cannot run.

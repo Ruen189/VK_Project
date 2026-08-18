@@ -78,7 +78,10 @@ async function runJob(
     emitJobStatus('analyzing', stageProgress('analyzing', 0));
     const thumb = downscaleForModel(image, 224);
     emitJobStatus('analyzing', stageProgress('analyzing', 0.4));
-    const predictor = resolvePredictor(options?.predictorMode ?? 'heuristic', options?.modelUrl);
+    if (!options?.modelUrl) {
+      throw new Error('modelUrl is required');
+    }
+    const predictor = resolvePredictor(options.modelUrl);
     const params = await predictor.predict(thumb.data, thumb.width, thumb.height);
     emitJobStatus('analyzing', stageProgress('analyzing', 1), {
       metrics: {

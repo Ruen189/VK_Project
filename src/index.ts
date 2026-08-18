@@ -12,7 +12,6 @@ export {
 } from './types.js';
 export type {
   CorrectionParams,
-  PredictorMode,
   StatusListener,
   SubmitOptions,
   TaskId,
@@ -21,11 +20,7 @@ export type {
   TaskStatus,
 } from './types.js';
 export {
-  HeuristicPredictor,
-  OnnxParamPredictor,
   TinyCnnPredictor,
-  getPredictor,
-  setPredictor,
   resolvePredictor,
 } from './ml/predictor.js';
 export type { ParamPredictor } from './ml/predictor.js';

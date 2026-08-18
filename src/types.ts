@@ -21,8 +21,6 @@ export interface CorrectionParams {
   saturation: number;
 }
 
-export type PredictorMode = 'heuristic' | 'model';
-
 export interface TaskMetrics {
   elapsedMs: number;
   width: number;
@@ -51,9 +49,7 @@ export interface SubmitOptions {
   outputType?: 'image/jpeg' | 'image/png';
   /** JPEG quality 0..1. Default: 0.92 */
   quality?: number;
-  /** heuristic (default) or trained TinyCNN JSON weights */
-  predictorMode?: PredictorMode;
-  /** URL to enhance_params.bin (or legacy .json) when predictorMode is "model" */
+  /** URL to enhance_params.bin (or legacy .json) */
   modelUrl?: string;
 }
 

@@ -39,7 +39,7 @@ def main() -> None:
         opset_version=17,
     )
     print(f"exported {args.out}")
-    print("Next: optional INT8 quantize, then wire OnnxParamPredictor in src/ml/predictor.ts")
+    print("Next: optional INT8 quantize, then load ONNX in the browser pipeline if needed")
 
 
 if __name__ == "__main__":
