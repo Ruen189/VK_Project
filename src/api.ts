@@ -41,7 +41,9 @@ export class ImageEnhancer {
     if (options.heicDecoderUrl) {
       setHeicDecoderUrl(String(options.heicDecoderUrl));
     }
-    const url = options.workerUrl ?? new URL('./worker.js', import.meta.url);
+    const url = new URL(String(options.workerUrl ?? new URL('./worker.js', import.meta.url)));
+    // Dedicated Workers keep an old script after Ctrl+F5; bust the cache on protocol changes.
+    if (!url.searchParams.has('v')) url.searchParams.set('v', '3');
     this.worker = new Worker(url, { type: 'module' });
     this.worker.onmessage = (ev: MessageEvent<WorkerToMain>) => this.onWorkerMessage(ev.data);
     this.worker.onerror = (err) => {

@@ -63,6 +63,12 @@ describe('resolvePredictor', () => {
   it('requires a model URL', () => {
     expect(() => resolvePredictor('')).toThrow(/modelUrl is required/);
   });
+
+  it('does not treat a legacy mode name as a weights URL', () => {
+    expect(() => resolvePredictor('heuristic')).toThrow(/modelUrl is required/);
+    const p = resolvePredictor('heuristic', 'https://example.test/enhance_params.bin');
+    expect(p.name).toBe('tiny-cnn');
+  });
 });
 
 describe('float16ToFloat32', () => {

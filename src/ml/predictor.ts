@@ -10,7 +10,17 @@ export interface ParamPredictor {
 
 const modelCache = new Map<string, TinyCnnPredictor>();
 
-export function resolvePredictor(modelUrl: string): ParamPredictor {
+/**
+ * Resolve TinyCNN weights.
+ * Second argument keeps compatibility with an older worker that called
+ * `resolvePredictor(mode, modelUrl)` — otherwise a cached worker treats
+ * `"heuristic"` as a weights URL and fetch() 404s.
+ */
+export function resolvePredictor(modelUrlOrMode: string, legacyModelUrl?: string): ParamPredictor {
+  const modelUrl =
+    modelUrlOrMode === 'heuristic' || modelUrlOrMode === 'model'
+      ? legacyModelUrl
+      : modelUrlOrMode;
   if (!modelUrl) {
     throw new Error('modelUrl is required');
   }
